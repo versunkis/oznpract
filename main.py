@@ -10,7 +10,7 @@ from typing import List, Dict
 DOCS_CONFIG = {
     "115-ФЗ": {"path": "docs/115fz.txt", "type": "articles"},
     "Положение ЦБ 860-П": {"path": "docs/regulation_860p.txt", "type": "chapters"},
-    "Т-Банк разъяснения": {"path": "docs/tbank_faq.txt", "type": "headers"}
+    "Внутренние положения Т-Банка": {"path": "docs/tbank_faq.txt", "type": "headers"}
 }
 
 THEMES = [
@@ -138,7 +138,7 @@ def analyze_theme_simple(theme: str, matches: List[Dict]) -> Dict:
 
     t_115 = get_text("115-ФЗ")
     t_cb = get_text("Положение ЦБ 860-П")
-    t_tb = get_text("Т-Банк разъяснения")
+    t_tb = get_text("Внутренние положения Т-Банка")
     
     texts = [t for t in [t_115, t_cb, t_tb] if "не найдена" not in t]
     scores = [docs_data[d]["similarity"] if docs_data[d] else 0.0 for d in DOCS_CONFIG.keys()]
