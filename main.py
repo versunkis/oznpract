@@ -119,7 +119,6 @@ def search_by_keywords(elements: List[Dict], themes: List[str]) -> Dict[str, Lis
 
 # АНАЛИЗ
 def analyze_theme_simple(theme: str, matches: List[Dict]) -> Dict:
-    # Группируем лучшие совпадения по каждому документу
     docs_data = {}
     for doc_name in DOCS_CONFIG.keys():
         best = None
@@ -141,26 +140,22 @@ def analyze_theme_simple(theme: str, matches: List[Dict]) -> Dict:
     t_cb = get_text("Положение ЦБ 860-П")
     t_tb = get_text("Т-Банк разъяснения")
     
-    # Собираем все найденные тексты для анализа
     texts = [t for t in [t_115, t_cb, t_tb] if "не найдена" not in t]
     scores = [docs_data[d]["similarity"] if docs_data[d] else 0.0 for d in DOCS_CONFIG.keys()]
     
-    # есть ли вообще данные
     if len(texts) < 2 or max(scores) < 0.2:
         disc_type = "Тема не представлена в документах"
         match_status = "Нет"
         
     else:
-        # 2. Анализируем различия между текстами
         all_present = all(s >= 0.2 for s in scores)
         
-        # Вычисляем длину текстов (для определения структурного разрыва)
         lengths = [len(t) for t in texts]
         max_len = max(lengths) if lengths else 0
         min_len = min(lengths) if lengths else 0
         length_ratio = max_len / min_len if min_len > 50 else 999
         
-        # Проверяем, есть ли общие ключевые слова (для терминологического разрыва)
+        # есть ли общие ключевые слова
         if len(texts) >= 2:
             words1 = set(texts[0].lower().split())
             words2 = set(texts[-1].lower().split())
@@ -170,12 +165,10 @@ def analyze_theme_simple(theme: str, matches: List[Dict]) -> Dict:
             overlap_ratio = 0
         
         if all_present and overlap_ratio > 0.4 and length_ratio < 2:
-            # Много общих слов, похожая длина → ТЕРМИНОЛОГИЧЕСКИЙ
             disc_type = "Терминологический. Различие в формулировках при сохранении одного и того же смысла"
             match_status = "Да"
             
         elif not all_present or overlap_ratio < 0.2:
-            # Норма есть не везде или мало общих слов → ЛОГИЧЕСКИЙ
             missing = [k for k, v in docs_data.items() if not v or v["similarity"] < 0.2]
             present = [k for k, v in docs_data.items() if v and v["similarity"] >= 0.2]
             if missing:
@@ -185,12 +178,12 @@ def analyze_theme_simple(theme: str, matches: List[Dict]) -> Dict:
             match_status = "Частично"
             
         elif length_ratio > 2.5:
-            # Сильная разница в длине → СТРУКТУРНЫЙ
+            # cильная разница в длине
             disc_type = "Структурный. Различие в способе изложения: один документ содержит общую норму, другой — детализированную процедуру"
             match_status = "Частично"
             
         else:
-            # По умолчанию — терминологический
+            # по умолчанию — терминологический
             disc_type = "Терминологический. Различие в формулировках при сохранении одного и того же смысла"
             match_status = "Да"
 
