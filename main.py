@@ -14,13 +14,14 @@ DOCS_CONFIG = {
 }
 
 THEMES = [
-    "Блокирование (замораживание) средств",
+    "Блокировка (замораживание) средств",
     "Операции, подлежащие обязательному контролю",
-    "Идентификация клиента",
+    "Упрощённая идентификация клиента",
     "Подозрительные операции",
     "Право отказа в проведении операции",
-    "Упрощенный контроль (до 15000 рублей)",
-    "Внутренний контроль"
+    "Порядок проверки при блокировке счёта",
+    "Внутренний контроль",
+    "Оценка уровня риска клиента"
 ]
 
 THRESHOLD_EXPLICIT = 0.4    # выше — норма "явно" присутствует
@@ -117,99 +118,113 @@ def search_by_keywords(elements: List[Dict], themes: List[str]) -> Dict[str, Lis
     return results
 
 # АНАЛИЗ
-def analyze_theme_simple(theme: str, elements: List[Dict]) -> Dict:
-    comparison = []
+def analyze_theme_simple(theme: str, matches: List[Dict]) -> Dict:
+    # Группируем лучшие совпадения по каждому документу
+    docs_data = {}
+    for doc_name in DOCS_CONFIG.keys():
+        best = None
+        for m in matches:
+            if m["doc"] == doc_name:
+                if best is None or m["similarity"] > best["similarity"]:
+                    best = m
+        docs_data[doc_name] = best
+
+    def get_text(doc_key):
+        m = docs_data.get(doc_key)
+        if m and m["similarity"] > 0.15:
+            txt = m["text"]
+            clean = re.sub(r'\s+', ' ', txt).strip()
+            return clean[:250] + ("..." if len(clean) > 250 else "")
+        return "Информация в документе не найдена или не относится к теме."
+
+    t_115 = get_text("115-ФЗ")
+    t_cb = get_text("Положение ЦБ 860-П")
+    t_tb = get_text("Т-Банк разъяснения")
     
-    for elem in elements:
-        score = elem["similarity"]
+    # Собираем все найденные тексты для анализа
+    texts = [t for t in [t_115, t_cb, t_tb] if "не найдена" not in t]
+    scores = [docs_data[d]["similarity"] if docs_data[d] else 0.0 for d in DOCS_CONFIG.keys()]
+    
+    # есть ли вообще данные
+    if len(texts) < 2 or max(scores) < 0.2:
+        disc_type = "Тема не представлена в документах"
+        match_status = "Нет"
         
-        # наличие нормы
-        if score >= THRESHOLD_EXPLICIT:
-            presence = "явно"
-        elif score >= 0.2:
-            presence = "неявно"
-        else:
-            presence = "отсутствует"
-        
-        # степень совпадения
-        if score >= THRESHOLD_FULL_MATCH:
-            match = "полное"
-        elif score >= 0.3:
-            match = "частичное"
-        else:
-            match = "отсутствие"
-        
-        comparison.append({
-            "document": elem["doc"],
-            "presence": presence,
-            "match_degree": match,
-            "score": score,
-            "text_quote": elem["text"][:120]
-        })
-    
-    # расхождения между документами
-    discrepancies = []
-    docs_with_norm = [c for c in comparison if c["presence"] != "отсутствует"]
-    
-    # если норма есть не во всех документах — логическое расхождение
-    if 0 < len(docs_with_norm) < len(comparison):
-        discrepancies.append({
-            "type": "логический",
-            "description": f"Норма {theme} присутствует не во всех документах",
-            "docs": [c["document"] for c in comparison if c["presence"] == "отсутствует"]
-        })
-    
-    # если степени совпадения разные — терминологическое расхождение
-    match_degrees = set(c["match_degree"] for c in docs_with_norm)
-    if len(match_degrees) > 1 and len(docs_with_norm) > 1:
-        discrepancies.append({
-            "type": "терминологический",
-            "description": "Разная степень детализации нормы в документах",
-            "docs": [c["document"] for c in comparison]
-        })
-    
-    if not docs_with_norm:
-        conclusion = f"По теме {theme}: норма не обнаружена в представленных фрагментах."
-    elif len(discrepancies) == 0:
-        conclusion = f"По теме {theme}: нормы в документах согласованы."
     else:
-        conclusion = f"По теме {theme}: выявлены расхождения между документами (требуется ручная проверка)."
-    
-    # eсть ли противоречия
-    has_contradictions = any(
-        c["document"].lower().startswith("т-банк") and c["presence"] == "отсутствует"
-        for c in comparison
-    ) or len(discrepancies) > 1
-    
+        # 2. Анализируем различия между текстами
+        all_present = all(s >= 0.2 for s in scores)
+        
+        # Вычисляем длину текстов (для определения структурного разрыва)
+        lengths = [len(t) for t in texts]
+        max_len = max(lengths) if lengths else 0
+        min_len = min(lengths) if lengths else 0
+        length_ratio = max_len / min_len if min_len > 50 else 999
+        
+        # Проверяем, есть ли общие ключевые слова (для терминологического разрыва)
+        if len(texts) >= 2:
+            words1 = set(texts[0].lower().split())
+            words2 = set(texts[-1].lower().split())
+            common_words = words1.intersection(words2)
+            overlap_ratio = len(common_words) / max(len(words1), len(words2)) if words1 or words2 else 0
+        else:
+            overlap_ratio = 0
+        
+        if all_present and overlap_ratio > 0.4 and length_ratio < 2:
+            # Много общих слов, похожая длина → ТЕРМИНОЛОГИЧЕСКИЙ
+            disc_type = "Терминологический. Различие в формулировках при сохранении одного и того же смысла"
+            match_status = "Да"
+            
+        elif not all_present or overlap_ratio < 0.2:
+            # Норма есть не везде или мало общих слов → ЛОГИЧЕСКИЙ
+            missing = [k for k, v in docs_data.items() if not v or v["similarity"] < 0.2]
+            present = [k for k, v in docs_data.items() if v and v["similarity"] >= 0.2]
+            if missing:
+                disc_type = f"Логический. Различие в содержании нормы: требование присутствует в {', '.join(present)}, но отсутствует в {', '.join(missing)}"
+            else:
+                disc_type = "Логический. Различие в содержании нормы (основания, условия или последствия отличаются)"
+            match_status = "Частично"
+            
+        elif length_ratio > 2.5:
+            # Сильная разница в длине → СТРУКТУРНЫЙ
+            disc_type = "Структурный. Различие в способе изложения: один документ содержит общую норму, другой — детализированную процедуру"
+            match_status = "Частично"
+            
+        else:
+            # По умолчанию — терминологический
+            disc_type = "Терминологический. Различие в формулировках при сохранении одного и того же смысла"
+            match_status = "Да"
+
     return {
-        "comparison": comparison,
-        "discrepancies": discrepancies,
-        "conclusion": conclusion,
-        "has_contradictions": has_contradictions
+        "Понятие/требование": theme,
+        "Документы сравнения": "115-ФЗ, №860-П, материалы Т-Банка",
+        "Как задано в 115-ФЗ": t_115,
+        "Как раскрыто в Положении ЦБ": t_cb,
+        "Как раскрыто в материалах Т-Банка": t_tb,
+        "Смысл совпадает?": match_status,
+        "Тип разрыва": disc_type
     }
 
 # 4. СБОРКА ТАБЛИЦЫ
-def build_final_table(results: List[Dict]) -> pd.DataFrame:
-    rows = []
-    for res in results:
-        row = {"Тема": res["theme"]}
-        analysis = res["analysis"]
-        
-        for comp in analysis.get("comparison", []):
-            short_doc = comp["document"][:18] + ".." if len(comp["document"]) > 18 else comp["document"]
-            row[f"{short_doc} | Наличие"] = comp.get("presence", "н/д")
-            row[f"{short_doc} | Совпадение"] = comp.get("match_degree", "н/д")
-            row[f"{short_doc} | Балл"] = f"{comp.get('score', 0):.3f}"
-        
-        disc_list = analysis.get("discrepancies", [])
-        row["Типы расхождений"] = ", ".join(set(d["type"] for d in disc_list)) if disc_list else "Нет"
-        
-        row["Противоречия"] = "Да" if analysis.get("has_contradictions") else "Нет"
-        row["Вывод"] = analysis.get("conclusion", "")[:150]
-        
-        rows.append(row)
+import pandas as pd
+from typing import List, Dict
+
+def build_final_table(rows_data: List[Dict]) -> pd.DataFrame:
+    flat_rows = [row["analysis"] for row in rows_data]
     
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(flat_rows)
+    
+    desired_cols = [
+        "Понятие/требование",
+        "Документы сравнения",
+        "Как задано в 115-ФЗ",
+        "Как раскрыто в Положении ЦБ",
+        "Как раскрыто в материалах Т-Банка",
+        "Смысл совпадает?",
+        "Тип разрыва"
+    ]
+    
+    df = df.reindex(columns=desired_cols).fillna("—")
+    return df
 
 # ГЛАВНЫЙ ЗАПУСК
 def main():
@@ -256,6 +271,9 @@ def main():
     print("\n Статистика:")
     print(f"   - Проанализировано тем: {len(THEMES)}")
     print(f"   - Всего блоков в документах: {len(elements)}")
-    print(f"   - Найдено расхождений: {sum(1 for r in final_results if r['analysis']['discrepancies'])}")
+    gaps_count = sum(1 for r in final_results 
+                    if any(kw in r['analysis'].get('Тип разрыва', '') 
+                           for kw in ['Терминологический', 'Логический', 'Структурный', 'Логический разрыв']))
+    print(f"   • Тем с выявленными разрывами: {gaps_count}")
 
 main()
