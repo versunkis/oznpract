@@ -205,7 +205,7 @@ for topic in topics:
     cb_present = cb_sim >= 0.25
     bank_present = bank_sim >= 0.25
 
-    if ab_similarity >= 0.55:
+    if ab_similarity >= 0.45:
         ab_meaning = 'смысл сохранился'
         ab_gap = 'отсутствует'
     # Если норма есть в одном, но нет в другом - Логический разрыв
@@ -219,14 +219,14 @@ for topic in topics:
             ab_gap = 'С'
             ab_meaning = 'Частично (разная детализация)'
         # Если длина похожая, но слова разные - Терминологический
-        elif ab_similarity < 0.45:  # 🔼 Подняли порог с 0.4 до 0.45
+        elif ab_similarity < 0.45:
             ab_gap = 'Т'
             ab_meaning = 'Частично (другая формулировка)'
         else:
             ab_gap = 'отсутствует'
             ab_meaning = 'смысл сохранился'
 
-    if bc_similarity >= 0.55:
+    if bc_similarity >= 0.45:
         bc_meaning = 'смысл сохранился'
         bc_gap = 'отсутствует'
     elif cb_present != bank_present:
