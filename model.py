@@ -38,11 +38,9 @@ def parse_law(text):
     for line in lines:
         line = line.strip()
         
-        # Глава
         if re.match(r'^Глава\s+\d+', line):
             current_chapter = line
             
-        # Статья
         elif re.match(r'^Статья\s+\d+', line):
 
             if current_article != '' and article_text.strip():
@@ -174,8 +172,7 @@ for topic in topics:
     law_match, law_sim = find_best_match(topic, law_df, vectorizer)
     cb_match, cb_sim = find_best_match(topic, cb_df, vectorizer)
     bank_match, bank_sim = find_best_match(topic, bank_df, vectorizer)
-    # ... остальной код
-
+    
 def detect_presence(similarity):
     if similarity < 0.15: return 'Отсутствует'
     elif similarity < 0.35: return 'Частично'
@@ -274,5 +271,3 @@ result_df = result_df.reindex(columns=cols_order)
 result_df.to_excel('final_comparison.xlsx', index=False)
 
 print("Готово! Результат анализа final_comparison.xlsx")
-print("Распределение разрывов:")
-print(result_df['Тип разрыва между A и B'].value_counts())
